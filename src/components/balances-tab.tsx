@@ -1,30 +1,37 @@
-"use client"
+"use client";
 
+import { useBudget } from "@/context/budget-context";
 import {
   ArrowRight, TrendingUp, TrendingDown, Minus
-} from 'lucide-react'
+} from "lucide-react";
 import {
   Card, CardContent,
   Badge, Separator
-} from 'valkoma-package/primitive'
-import type { Balance, Transaction } from '../types/types'
+} from "valkoma-package/primitive";
 
-interface BalancesTabProps {
-  balances: Balance[]
-  transactions: Transaction[]
-}
+export default function BalancesTab() {
+  const { group, calculateBalances, optimizeDebts } = useBudget();
 
-export default function BalancesTab({ balances, transactions }: BalancesTabProps) {
-  const positiveBalances = balances.filter(b => b.balance > 0.01)
-  const negativeBalances = balances.filter(b => b.balance < -0.01)
-  const zeroBalances = balances.filter(b => Math.abs(b.balance) <= 0.01)
+  const balancesMap = calculateBalances();
+  const settlements = optimizeDebts();
+
+  // Turn balances object into array with member details
+  const balances = group.members.map(m => ({
+    memberId: m.id,
+    memberName: m.name,
+    balance: balancesMap[m.id] ?? 0
+  }));
+
+  const positiveBalances = balances.filter(b => b.balance > 0.01);
+  const negativeBalances = balances.filter(b => b.balance < -0.01);
+  const zeroBalances = balances.filter(b => Math.abs(b.balance) <= 0.01);
 
   const renderList = (
-    list: Balance[],
+    list: typeof balances,
     color: string,
     sign: "+" | "-" | "",
     fallback: string
-  ) => (
+  ) =>
     list.length === 0 ? (
       <p className="text-muted-foreground text-sm">{fallback}</p>
     ) : (
@@ -38,11 +45,11 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
           </li>
         ))}
       </ul>
-    )
-  )
+    );
 
   return (
     <div className="space-y-8">
+      {/* Balances */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Current Balances</h2>
 
@@ -51,7 +58,9 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
             <CardContent>
               <Minus className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <h3 className="font-semibold">No balances yet</h3>
-              <p className="text-muted-foreground">Add expenses to view balances.</p>
+              <p className="text-muted-foreground">
+                Add expenses to view balances.
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -65,7 +74,7 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
               <p className="text-xs text-muted-foreground mb-2">
                 Members who should receive money
               </p>
-              {renderList(positiveBalances, 'green', '+', 'No one is owed money')}
+              {renderList(positiveBalances, "green", "+", "No one is owed money")}
             </div>
 
             {/* Owes Money */}
@@ -77,7 +86,7 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
               <p className="text-xs text-muted-foreground mb-2">
                 Members who need to pay
               </p>
-              {renderList(negativeBalances, 'red', '-', 'No one owes money')}
+              {renderList(negativeBalances, "red", "-", "No one owes money")}
             </div>
 
             {/* All Settled */}
@@ -89,7 +98,7 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
               <p className="text-xs text-muted-foreground mb-2">
                 Members with no outstanding balance
               </p>
-              {renderList(zeroBalances, 'gray', '', 'No one is settled')}
+              {renderList(zeroBalances, "gray", "", "No one is settled")}
             </div>
           </div>
         )}
@@ -97,10 +106,11 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
 
       <Separator />
 
+      {/* Settlements */}
       <div>
         <h2 className="text-xl font-semibold mb-4">Suggested Settlements</h2>
 
-        {transactions.length === 0 ? (
+        {settlements.length === 0 ? (
           <Card className="text-center py-10">
             <CardContent>
               <Minus className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
@@ -115,24 +125,30 @@ export default function BalancesTab({ balances, transactions }: BalancesTabProps
             <p className="text-sm text-muted-foreground mb-2">
               Settle debts with the minimum number of transactions:
             </p>
-            {transactions.map((tx, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between border rounded-md px-4 py-2"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="font-medium">{tx.fromName}</span>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-medium">{tx.toName}</span>
+            {settlements.map((tx, i) => {
+              const fromName =
+                group.members.find(m => m.id === tx.from)?.name || "Unknown";
+              const toName =
+                group.members.find(m => m.id === tx.to)?.name || "Unknown";
+              return (
+                <div
+                  key={i}
+                  className="flex items-center justify-between border rounded-md px-4 py-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">{fromName}</span>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-medium">{toName}</span>
+                  </div>
+                  <Badge className="bg-blue-100 text-blue-800 px-3 py-0.5 text-sm">
+                    ${tx.amount.toFixed(2)}
+                  </Badge>
                 </div>
-                <Badge className="bg-blue-100 text-blue-800 px-3 py-0.5 text-sm">
-                  ${tx.amount.toFixed(2)}
-                </Badge>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }

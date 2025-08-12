@@ -1,41 +1,31 @@
+"use client";
+
+import { useState } from "react";
 import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-  Button,
-  Card,
-  CardContent,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  Input,
-  Label,
+  Avatar, AvatarFallback, AvatarImage,
+  Button, Card, CardContent, Dialog, DialogContent,
+  DialogDescription, DialogHeader, DialogTitle, DialogTrigger,
+  Input, Label
 } from "valkoma-package/primitive";
 import { Edit, Plus, Trash2, User } from "lucide-react";
-import { useState } from "react";
 import { useToast } from "valkoma-package/hooks";
-import type { Group, Member } from "../types/types";
-
-interface MembersTabProps {
-  group: Group;
-  onUpdateGroup: (group: Group) => void;
-}
-
-export default function MembersTab({ group, onUpdateGroup }: MembersTabProps) {
+import { useBudget, type Participant } from "@/context/budget-context";
+export default function MembersTab() {
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
-  const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [memberName, setMemberName] = useState('');
-  const [memberNickname, setMemberNickname] = useState('');
-  const [memberEmail, setMemberEmail] = useState('');
+  const [editingMember, setEditingMember] = useState<Participant | null>(null);
+  const [memberName, setMemberName] = useState("");
+  const [memberPhone, setMemberPhone] = useState("");
+  const [memberImage, setMemberImage] = useState("");
+  const [memberNotes, setMemberNotes] = useState("");
+
   const { toast } = useToast();
+  const { group, addParticipant, removeParticipant, updateGroup } = useBudget();
 
   const resetForm = () => {
-    setMemberName('');
-    setMemberNickname('');
-    setMemberEmail('');
+    setMemberName("");
+    setMemberPhone("");
+    setMemberImage("");
+    setMemberNotes("");
     setEditingMember(null);
   };
 
@@ -45,54 +35,48 @@ export default function MembersTab({ group, onUpdateGroup }: MembersTabProps) {
       return;
     }
 
-    const member: Member = {
-      id: editingMember?.id ?? Date.now().toString(),
-      name: memberName.trim(),
-      nickname: memberNickname.trim() || undefined,
-      email: memberEmail.trim() || undefined,
-    };
+    if (editingMember) {
+      updateGroup({
+        members: group.members.map(m =>
+          m.id === editingMember.id
+            ? { ...m, name: memberName.trim(), phone: memberPhone || undefined, image: memberImage || undefined, notes: memberNotes || undefined }
+            : m
+        ),
+      });
+      toast({ title: "Success", description: `${memberName} updated` });
+    } else {
+      addParticipant({
+        name: memberName.trim(),
+        phone: memberPhone || undefined,
+        image: memberImage || undefined,
+        notes: memberNotes || undefined,
+      });
+      toast({ title: "Success", description: `${memberName} added` });
+    }
 
-    const updatedGroup = {
-      ...group,
-      members: editingMember
-        ? group.members.map((m) => (m.id === editingMember.id ? member : m))
-        : [...group.members, member],
-    };
-
-    onUpdateGroup(updatedGroup);
     resetForm();
     setIsAddMemberOpen(false);
-    toast({
-      title: "Success",
-      description: editingMember
-        ? `${member.name} updated`
-        : `${member.name} added`,
-    });
   };
 
   const deleteMember = (id: string) => {
     const member = group.members.find(m => m.id === id);
     if (!member) return;
 
-    const hasExpenses = group.expenses.some(exp =>
-      exp.paidBy === id || exp.splitBetween.some(s => s.memberId === id)
+    const hasExpenses = group.expenses.some(
+      exp => exp.paidBy === id || exp.splits.some(s => s.participantId === id)
     );
 
     if (hasExpenses) {
       toast({
         title: "Cannot Delete Member",
         description: "This member has expenses. Reassign or delete them first.",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
 
     if (confirm(`Remove ${member.name}?`)) {
-      const updated = {
-        ...group,
-        members: group.members.filter(m => m.id !== id)
-      };
-      onUpdateGroup(updated);
+      removeParticipant(id);
       toast({ title: "Removed", description: `${member.name} deleted` });
     }
   };
@@ -132,12 +116,16 @@ export default function MembersTab({ group, onUpdateGroup }: MembersTabProps) {
                 <Input value={memberName} onChange={e => setMemberName(e.target.value)} />
               </div>
               <div>
-                <Label>Nickname</Label>
-                <Input value={memberNickname} onChange={e => setMemberNickname(e.target.value)} />
+                <Label>Phone</Label>
+                <Input value={memberPhone} onChange={e => setMemberPhone(e.target.value)} />
               </div>
               <div>
-                <Label>Email</Label>
-                <Input value={memberEmail} type="email" onChange={e => setMemberEmail(e.target.value)} />
+                <Label>Image URL</Label>
+                <Input value={memberImage} onChange={e => setMemberImage(e.target.value)} />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Input value={memberNotes} onChange={e => setMemberNotes(e.target.value)} />
               </div>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={resetForm}>Cancel</Button>
@@ -167,18 +155,16 @@ export default function MembersTab({ group, onUpdateGroup }: MembersTabProps) {
             <div key={member.id} className="flex items-center justify-between px-4 py-3 hover:bg-muted transition">
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar className="w-8 h-8">
-                  <AvatarImage src={member.avatar || "/placeholder.svg"} />
+                  <AvatarImage src={member.image || "/placeholder.svg"} />
                   <AvatarFallback>{getInitials(member.name)}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
                   <div className="font-medium truncate">{member.name}</div>
-                  {member.nickname && (
-                    <div className="text-xs text-muted-foreground truncate">
-                      "{member.nickname}"
-                    </div>
+                  {member.phone && (
+                    <div className="text-xs text-muted-foreground truncate">{member.phone}</div>
                   )}
-                  {member.email && (
-                    <div className="text-xs text-muted-foreground truncate">{member.email}</div>
+                  {member.notes && (
+                    <div className="text-xs text-muted-foreground truncate">{member.notes}</div>
                   )}
                 </div>
               </div>
@@ -190,8 +176,9 @@ export default function MembersTab({ group, onUpdateGroup }: MembersTabProps) {
                     setEditingMember(member);
                     setIsAddMemberOpen(true);
                     setMemberName(member.name);
-                    setMemberNickname(member.nickname || '');
-                    setMemberEmail(member.email || '');
+                    setMemberPhone(member.phone || "");
+                    setMemberImage(member.image || "");
+                    setMemberNotes(member.notes || "");
                   }}
                 >
                   <Edit className="w-4 h-4" />

@@ -1,580 +1,378 @@
-"use client"
+"use client";
 
-import { useState, useMemo } from 'react'
-import { Plus, Edit, Trash2, Receipt, Image, Users } from 'lucide-react'
+import { useEffect, useState } from "react";
+import { Plus, Edit, Trash2 } from "lucide-react";
 import {
-  Card, CardContent,
-  CardDescription, CardHeader, CardTitle,
-  Button, Dialog, DialogContent, DialogDescription,
-  DialogHeader, DialogTitle, DialogTrigger,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-  RadioGroup, RadioGroupItem, Badge, Checkbox, Textarea, Label, Input
-} from 'valkoma-package/primitive'
-import { useToast } from 'valkoma-package/hooks'
-import { type Group, type Expense, type ExpenseSplit, EXPENSE_CATEGORIES } from '../types/types'
+  Input, Textarea, Label,
+  Checkbox
+} from "valkoma-package/primitive";
+import { EXPENSE_CATEGORIES, useBudget, type Expense } from "@/context/budget-context";
 
-interface ExpensesTabProps {
-  group: Group
-  onUpdateGroup: (group: Group) => void
-  searchQuery: string
-  categoryFilter: string
-  memberFilter: string
-}
+export default function ExpensesTab() {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
-export default function ExpensesTab({
-  group,
-  onUpdateGroup,
-  searchQuery,
-  categoryFilter,
-  memberFilter
-}: ExpensesTabProps) {
-  const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false)
-  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
-  const [expenseTitle, setExpenseTitle] = useState('')
-  const [expenseDescription, setExpenseDescription] = useState('')
-  const [expenseAmount, setExpenseAmount] = useState('')
-  const [expensePaidBy, setExpensePaidBy] = useState('')
-  const [expenseDate, setExpenseDate] = useState('')
-  const [expenseCategory, setExpenseCategory] = useState('')
-  const [splitType, setSplitType] = useState<'equal' | 'percentage' | 'exact'>('equal')
-  const [selectedMembers, setSelectedMembers] = useState<string[]>([])
-  const [customSplits, setCustomSplits] = useState<{ [memberId: string]: string }>({})
-  const [receiptImage, setReceiptImage] = useState<string>('')
-  const { toast } = useToast()
+  // Form state
+  const [expenseTitle, setExpenseTitle] = useState("");
+  const [expenseDescription, setExpenseDescription] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expensePaidBy, setExpensePaidBy] = useState("");
+  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split("T")[0]);
+  const [expenseCategory, setExpenseCategory] = useState("");
+  const [splitType, setSplitType] = useState<"equal" | "percentage" | "exact">("equal");
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [customSplits, setCustomSplits] = useState<{ [memberId: string]: string }>({});
+  const [receiptImage, setReceiptImage] = useState("");
 
-  const filteredExpenses = useMemo(() => {
-    return group.expenses.filter(expense => {
-      const matchesSearch = searchQuery === '' ||
-        expense.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        expense.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  const { group, addExpense, removeExpense, updateExpense, filterExpenses } = useBudget();
+  const filteredExpenses = filterExpenses();
 
-      const matchesCategory = categoryFilter === 'all' || expense.category === categoryFilter
-
-      const matchesMember = memberFilter === 'all' ||
-        expense.paidBy === memberFilter ||
-        expense.splitBetween.some(split => split.memberId === memberFilter)
-
-      return matchesSearch && matchesCategory && matchesMember
-    })
-  }, [group.expenses, searchQuery, categoryFilter, memberFilter])
+  // Populate form when editing
+  useEffect(() => {
+    if (editingExpense) {
+      setExpenseTitle(editingExpense.title);
+      setExpenseDescription(editingExpense.notes || "");
+      setExpenseAmount(editingExpense.amount.toString());
+      setExpensePaidBy(editingExpense.paidBy);
+      setExpenseDate(editingExpense.date);
+      setExpenseCategory(editingExpense.category);
+      setSplitType(
+        editingExpense.splits.every(s => s.amount === editingExpense.amount / editingExpense.splits.length)
+          ? "equal"
+          : "exact" // simple heuristic
+      );
+      setSelectedMembers(editingExpense.splits.map(s => s.participantId));
+      const splitsMap: { [id: string]: string } = {};
+      editingExpense.splits.forEach(s => {
+        splitsMap[s.participantId] = s.amount.toString();
+      });
+      setCustomSplits(splitsMap);
+    }
+  }, [editingExpense]);
 
   const resetForm = () => {
-    setExpenseTitle('')
-    setExpenseDescription('')
-    setExpenseAmount('')
-    setExpensePaidBy('')
-    setExpenseDate(new Date().toISOString().split('T')[0])
-    setExpenseCategory('')
-    setSplitType('equal')
-    setSelectedMembers([])
-    setCustomSplits({})
-    setReceiptImage('')
-    setEditingExpense(null)
-  }
+    setExpenseTitle("");
+    setExpenseDescription("");
+    setExpenseAmount("");
+    setExpensePaidBy("");
+    setExpenseDate(new Date().toISOString().split("T")[0]);
+    setExpenseCategory("");
+    setSplitType("equal");
+    setSelectedMembers([]);
+    setCustomSplits({});
+    setReceiptImage("");
+    setEditingExpense(null);
+  };
 
-  const calculateSplits = (): ExpenseSplit[] => {
-    const amount = parseFloat(expenseAmount)
-    if (isNaN(amount) || selectedMembers.length === 0) return []
+  const calculateSplits = () => {
+    const amount = parseFloat(expenseAmount);
+    if (isNaN(amount) || selectedMembers.length === 0) return [];
 
-    if (splitType === 'equal') {
-      const amountPerPerson = amount / selectedMembers.length
+    if (splitType === "equal") {
+      const amountPerPerson = amount / selectedMembers.length;
       return selectedMembers.map(memberId => ({
-        memberId,
-        amount: amountPerPerson,
-        percentage: 100 / selectedMembers.length
-      }))
-    } else if (splitType === 'percentage') {
+        participantId: memberId,
+        amount: amountPerPerson
+      }));
+    } else if (splitType === "percentage") {
       return selectedMembers.map(memberId => {
-        const percentage = parseFloat(customSplits[memberId] || '0')
+        const percentage = parseFloat(customSplits[memberId] || "0");
         return {
-          memberId,
-          amount: (amount * percentage) / 100,
-          percentage
-        }
-      })
-    } else { // exact
+          participantId: memberId,
+          amount: (amount * percentage) / 100
+        };
+      });
+    } else {
       return selectedMembers.map(memberId => ({
-        memberId,
-        amount: parseFloat(customSplits[memberId] || '0')
-      }))
+        participantId: memberId,
+        amount: parseFloat(customSplits[memberId] || "0")
+      }));
     }
-  }
+  };
 
-  const validateSplits = (): boolean => {
-    const amount = parseFloat(expenseAmount)
-    if (isNaN(amount)) return false
+  const validateSplits = () => {
+    const amount = parseFloat(expenseAmount);
+    if (isNaN(amount)) return false;
 
-    const splits = calculateSplits()
-    const totalSplit = splits.reduce((sum, split) => sum + split.amount, 0)
+    const splits = calculateSplits();
+    const totalSplit = splits.reduce((sum, s) => sum + s.amount, 0);
 
-    if (splitType === 'percentage') {
-      const totalPercentage = splits.reduce((sum, split) => sum + (split.percentage || 0), 0)
-      return Math.abs(totalPercentage - 100) < 0.01
-    } else if (splitType === 'exact') {
-      return Math.abs(totalSplit - amount) < 0.01
+    if (splitType === "percentage") {
+      const totalPercentage = selectedMembers.reduce(
+        (sum, m) => sum + parseFloat(customSplits[m] || "0"),
+        0
+      );
+      return Math.abs(totalPercentage - 100) < 0.01;
+    } else if (splitType === "exact") {
+      return Math.abs(totalSplit - amount) < 0.01;
     }
 
-    return true
-  }
+    return true;
+  };
 
-  const addExpense = () => {
+  const handleSaveExpense = () => {
     if (!expenseTitle.trim() || !expenseAmount || !expensePaidBy || selectedMembers.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      })
-      return
+      console.log("Please fill in all required fields");
+      return;
     }
-
     if (!validateSplits()) {
-      toast({
-        title: "Error",
-        description: splitType === 'percentage'
-          ? "Percentages must add up to 100%"
-          : "Split amounts must equal the total expense",
-        variant: "destructive"
-      })
-      return
+      console.log("Invalid split configuration");
+      return;
     }
 
-    const newExpense: Expense = {
-      id: Date.now().toString(),
-      title: expenseTitle.trim(),
-      description: expenseDescription.trim(),
+    const expenseData: Expense = {
+      id: editingExpense?.id || Date.now().toString(),
+      title: expenseTitle,
       amount: parseFloat(expenseAmount),
       paidBy: expensePaidBy,
-      splitBetween: calculateSplits(),
-      splitType,
+      splits: calculateSplits(),
+      category: expenseCategory as any,
+      notes: expenseDescription,
       date: expenseDate,
-      category: expenseCategory,
-      receipt: receiptImage,
-      tags: [],
-      createdAt: new Date().toISOString()
+    };
+
+    if (editingExpense) {
+      updateExpense(expenseData);
+    } else {
+      addExpense(expenseData);
     }
 
-    const updatedGroup = {
-      ...group,
-      expenses: [...group.expenses, newExpense]
-    }
-
-    onUpdateGroup(updatedGroup)
-    resetForm()
-    setIsAddExpenseOpen(false)
-
-    toast({
-      title: "Success",
-      description: `Expense "${newExpense.title}" added successfully`
-    })
-  }
-
-  const updateExpense = () => {
-    if (!editingExpense || !expenseTitle.trim() || !expenseAmount || !expensePaidBy || selectedMembers.length === 0) {
-      toast({
-        title: "Error",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      })
-      return
-    }
-
-    if (!validateSplits()) {
-      toast({
-        title: "Error",
-        description: splitType === 'percentage'
-          ? "Percentages must add up to 100%"
-          : "Split amounts must equal the total expense",
-        variant: "destructive"
-      })
-      return
-    }
-
-    const updatedExpense: Expense = {
-      ...editingExpense,
-      title: expenseTitle.trim(),
-      description: expenseDescription.trim(),
-      amount: parseFloat(expenseAmount),
-      paidBy: expensePaidBy,
-      splitBetween: calculateSplits(),
-      splitType,
-      date: expenseDate,
-      category: expenseCategory,
-      receipt: receiptImage,
-    }
-
-    const updatedGroup = {
-      ...group,
-      expenses: group.expenses.map(e =>
-        e.id === editingExpense.id ? updatedExpense : e
-      )
-    }
-
-    onUpdateGroup(updatedGroup)
-    resetForm()
-
-    toast({
-      title: "Success",
-      description: `Expense "${updatedExpense.title}" updated successfully`
-    })
-  }
-
-  const deleteExpense = (expenseId: string) => {
-    const expense = group.expenses.find(e => e.id === expenseId)
-    if (!expense) return
-
-    if (confirm(`Are you sure you want to delete the expense "${expense.title}"?`)) {
-      const updatedGroup = {
-        ...group,
-        expenses: group.expenses.filter(e => e.id !== expenseId)
-      }
-
-      onUpdateGroup(updatedGroup)
-
-      toast({
-        title: "Success",
-        description: `Expense "${expense.title}" deleted successfully`
-      })
-    }
-  }
-
-  const startEditing = (expense: Expense) => {
-    setEditingExpense(expense)
-    setExpenseTitle(expense.title)
-    setExpenseDescription(expense.description || '')
-    setExpenseAmount(expense.amount.toString())
-    setExpensePaidBy(expense.paidBy)
-    setExpenseDate(expense.date)
-    setExpenseCategory(expense.category)
-    setSplitType(expense.splitType)
-    setSelectedMembers(expense.splitBetween.map(split => split.memberId))
-    setReceiptImage(expense.receipt || '')
-
-    const splits: { [memberId: string]: string } = {}
-    expense.splitBetween.forEach(split => {
-      if (expense.splitType === 'percentage') {
-        splits[split.memberId] = (split.percentage || 0).toString()
-      } else if (expense.splitType === 'exact') {
-        splits[split.memberId] = split.amount.toString()
-      }
-    })
-    setCustomSplits(splits)
-  }
-
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        setReceiptImage(e.target?.result as string)
-      }
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const getMemberName = (memberId: string) => {
-    return group.members.find(m => m.id === memberId)?.name || 'Unknown'
-  }
-
-  const toggleMemberSelection = (memberId: string) => {
-    setSelectedMembers(prev =>
-      prev.includes(memberId)
-        ? prev.filter(id => id !== memberId)
-        : [...prev, memberId]
-    )
-  }
+    resetForm();
+    setIsDialogOpen(false);
+  };
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold">Expenses</h2>
-        <Dialog open={isAddExpenseOpen || !!editingExpense} onOpenChange={(open) => {
-          if (!open) {
-            setIsAddExpenseOpen(false)
-            resetForm()
-          }
-        }}>
-          <DialogTrigger asChild>
-            <Button
-              onClick={() => setIsAddExpenseOpen(true)}
-              disabled={group.members.length === 0}
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Expense
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {editingExpense ? 'Edit Expense' : 'Add New Expense'}
-              </DialogTitle>
-              <DialogDescription>
-                {editingExpense ? 'Update expense details.' : 'Add a new shared expense.'}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="expenseTitle">Title *</Label>
-                  <Input
-                    id="expenseTitle"
-                    value={expenseTitle}
-                    onChange={(e) => setExpenseTitle(e.target.value)}
-                    placeholder="e.g., Dinner at Restaurant"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="expenseAmount">Amount *</Label>
-                  <Input
-                    id="expenseAmount"
-                    type="number"
-                    step="0.01"
-                    value={expenseAmount}
-                    onChange={(e) => setExpenseAmount(e.target.value)}
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
+    <div className="space-y-4">
+      <section className="w-full px-4 md:px-8 max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-base font-semibold">Expenses</h2>
+            <p className="text-xs text-muted-foreground">Track shared costs</p>
+          </div>
+          <Button size="sm" onClick={() => setIsDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-1" /> Add
+          </Button>
+        </div>
 
-              <div>
-                <Label htmlFor="expenseDescription">Description</Label>
-                <Textarea
-                  id="expenseDescription"
-                  value={expenseDescription}
-                  onChange={(e) => setExpenseDescription(e.target.value)}
-                  placeholder="Optional description"
-                  rows={2}
-                />
-              </div>
+        {/* Table Headings */}
+        <div className="hidden md:grid grid-cols-6 gap-4 text-xs font-medium text-muted-foreground px-2 py-2 border-b">
+          <span>Title</span>
+          <span>Date</span>
+          <span>Amount</span>
+          <span>Category</span>
+          <span>Paid By</span>
+          <span className="text-right">Actions</span>
+        </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="expensePaidBy">Paid By *</Label>
-                  <Select value={expensePaidBy} onValueChange={setExpensePaidBy}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select member" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {group.members.map(member => (
-                        <SelectItem key={member.id} value={member.id}>
-                          {member.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label htmlFor="expenseDate">Date *</Label>
-                  <Input
-                    id="expenseDate"
-                    type="date"
-                    value={expenseDate}
-                    onChange={(e) => setExpenseDate(e.target.value)}
-                  />
-                </div>
-              </div>
+        {/* Expense Rows */}
+        {filteredExpenses.length === 0 ? (
+          <p className="text-sm text-muted-foreground mt-6">No expenses yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {filteredExpenses.map((expense) => {
+              const paidByMember = group.members.find((m) => m.id === expense.paidBy);
 
-              <div>
-                <Label htmlFor="expenseCategory">Category</Label>
-                <Select value={expenseCategory} onValueChange={setExpenseCategory}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EXPENSE_CATEGORIES.map(category => (
-                      <SelectItem key={category} value={category}>
-                        {category}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              return (
+                <li
+                  key={expense.id}
+                  className="grid grid-cols-1 md:grid-cols-6 gap-2 px-2 py-3 text-sm items-center"
+                >
+                  {/* Title */}
+                  <div className="font-medium">{expense.title}</div>
 
-              <div>
-                <Label>Split Between *</Label>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  {group.members.map(member => (
-                    <div key={member.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={member.id}
-                        checked={selectedMembers.includes(member.id)}
-                        onCheckedChange={() => toggleMemberSelection(member.id)}
-                      />
-                      <Label htmlFor={member.id} className="text-sm font-normal">
-                        {member.name}
-                      </Label>
-                    </div>
+                  {/* Date */}
+                  <div className="text-muted-foreground">
+                    {new Date(expense.date).toLocaleDateString()}
+                  </div>
+
+                  {/* Amount */}
+                  <div>${expense.amount.toFixed(2)}</div>
+
+                  {/* Category */}
+                  <div className="text-muted-foreground">{expense.category}</div>
+
+                  {/* Paid By */}
+                  <div className="text-muted-foreground">{paidByMember?.name ?? "Unknown"}</div>
+
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingExpense(expense);
+                        setIsDialogOpen(true);
+                      }}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => removeExpense(expense.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+
+
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open);
+        if (!open) resetForm();
+      }}>
+        <DialogContent className="max-w-3xl p-6">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl">{editingExpense ? "Edit Expense" : "Add Expense"}</DialogTitle>
+            <DialogDescription>Provide all the details to record the expense.</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Title */}
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="title">Title</Label>
+              <Input id="title" value={expenseTitle} onChange={e => setExpenseTitle(e.target.value)} />
+            </div>
+
+            {/* Amount */}
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="amount">Amount</Label>
+              <Input id="amount" type="number" value={expenseAmount} onChange={e => setExpenseAmount(e.target.value)} />
+            </div>
+
+            {/* Paid By */}
+            <div className="flex flex-col gap-1">
+              <Label>Paid By</Label>
+              <Select value={expensePaidBy} onValueChange={setExpensePaidBy}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select member" />
+                </SelectTrigger>
+                <SelectContent>
+                  {group.members.map(m => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                   ))}
-                </div>
-              </div>
+                </SelectContent>
+              </Select>
+            </div>
 
-              <div>
-                <Label>Split Type</Label>
-                <RadioGroup value={splitType} onValueChange={(value: 'equal' | 'percentage' | 'exact') => setSplitType(value)} className="mt-2">
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="equal" id="equal" />
-                    <Label htmlFor="equal">Equal Split</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="percentage" id="percentage" />
-                    <Label htmlFor="percentage">Percentage Split</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="exact" id="exact" />
-                    <Label htmlFor="exact">Exact Amounts</Label>
-                  </div>
-                </RadioGroup>
-              </div>
+            {/* Category */}
+            <div className="flex flex-col gap-1">
+              <Label>Category</Label>
+              <Select value={expenseCategory} onValueChange={setExpenseCategory}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EXPENSE_CATEGORIES.map(c => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-              {(splitType === 'percentage' || splitType === 'exact') && (
-                <div>
-                  <Label>Custom Split</Label>
-                  <div className="space-y-2 mt-2">
-                    {selectedMembers.map(memberId => (
-                      <div key={memberId} className="flex items-center gap-2">
-                        <span className="w-24 text-sm">{getMemberName(memberId)}:</span>
-                        <Input
-                          type="number"
-                          step={splitType === 'percentage' ? '1' : '0.01'}
-                          placeholder={splitType === 'percentage' ? '%' : '$'}
-                          value={customSplits[memberId] || ''}
-                          onChange={(e) => setCustomSplits(prev => ({
-                            ...prev,
-                            [memberId]: e.target.value
-                          }))}
-                          className="w-20"
-                        />
-                        {splitType === 'percentage' && <span className="text-sm">%</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            {/* Date */}
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="date">Date</Label>
+              <Input id="date" type="date" value={expenseDate} onChange={e => setExpenseDate(e.target.value)} />
+            </div>
 
-              <div>
-                <Label htmlFor="receiptUpload">Receipt Image</Label>
-                <Input
-                  id="receiptUpload"
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="mt-1"
-                />
-                {receiptImage && (
-                  <div className="mt-2">
-                    <img
-                      src={receiptImage || "/placeholder.svg"}
-                      alt="Receipt"
-                      className="max-w-full h-32 object-cover rounded border"
+            {/* Split Type */}
+            <div className="flex flex-col gap-1">
+              <Label>Split Type</Label>
+              <Select value={splitType} onValueChange={(val: any) => setSplitType(val)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select split type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="equal">Equal</SelectItem>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                  <SelectItem value="exact">Exact Amount</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Members */}
+            <div className="md:col-span-2 flex flex-col gap-2">
+              <Label>Members</Label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {group.members.map((m) => (
+                  <div key={m.id} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      id={`member-${m.id}`}
+                      checked={selectedMembers.includes(m.id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedMembers((prev) => [...prev, m.id]);
+                        } else {
+                          setSelectedMembers((prev) => prev.filter((id) => id !== m.id));
+                        }
+                      }}
                     />
+                    <label htmlFor={`member-${m.id}`} className="cursor-pointer">
+                      {m.name}
+                    </label>
                   </div>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={resetForm}>
-                  Cancel
-                </Button>
-                <Button onClick={editingExpense ? updateExpense : addExpense}>
-                  {editingExpense ? 'Update' : 'Add'} Expense
-                </Button>
+                ))}
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
-      </div>
 
-      {group.members.length === 0 ? (
-        <Card className="text-center py-12">
-          <CardContent>
-            <Users className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No members yet</h3>
-            <p className="text-muted-foreground">
-              Add members first before creating expenses.
-            </p>
-          </CardContent>
-        </Card>
-      ) : filteredExpenses.length === 0 ? (
-        <Card className="text-center py-12">
-          <CardContent>
-            <Receipt className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No expenses yet</h3>
-            <p className="text-muted-foreground mb-4">
-              {searchQuery || categoryFilter !== 'all' || memberFilter !== 'all'
-                ? 'No expenses match your current filters.'
-                : 'Start adding shared expenses for this group.'
-              }
-            </p>
-            {(!searchQuery && categoryFilter === 'all' && memberFilter === 'all') && (
-              <Button onClick={() => setIsAddExpenseOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Your First Expense
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {filteredExpenses.map((expense) => (
-            <Card key={expense.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="flex items-center gap-2">
-                      {expense.title}
-                      <Badge variant="secondary">{expense.category}</Badge>
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      Paid by {getMemberName(expense.paidBy)} on {new Date(expense.date).toLocaleDateString()}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="text-right">
-                      <div className="text-xl font-bold">${expense.amount.toFixed(2)}</div>
+            {/* Custom Splits */}
+            {splitType !== "equal" && selectedMembers.length > 0 && (
+              <div className="md:col-span-2 flex flex-col gap-2">
+                <Label>Custom Splits</Label>
+                <div className="grid gap-2">
+                  {selectedMembers.map(mId => (
+                    <div key={mId} className="flex items-center gap-4">
+                      <span className="w-40 text-sm text-muted-foreground">
+                        {group.members.find(m => m.id === mId)?.name}
+                      </span>
+                      <Input
+                        type="number"
+                        placeholder={splitType === "percentage" ? "%" : "Amount"}
+                        value={customSplits[mId] || ""}
+                        onChange={(e) =>
+                          setCustomSplits(prev => ({ ...prev, [mId]: e.target.value }))
+                        }
+                      />
                     </div>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => startEditing(expense)}
-                      >
-                        <Edit className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => deleteExpense(expense.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {expense.description && (
-                  <p className="text-sm text-muted-foreground mb-3">{expense.description}</p>
-                )}
-
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {expense.splitBetween.map(split => (
-                    <Badge key={split.memberId} variant="outline">
-                      {getMemberName(split.memberId)}: ${split.amount.toFixed(2)}
-                      {split.percentage && ` (${split.percentage.toFixed(1)}%)`}
-                    </Badge>
                   ))}
                 </div>
+              </div>
+            )}
 
-                {expense.receipt && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Image className="w-4 h-4" />
-                    <span>Receipt attached</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+            {/* Description */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <Label htmlFor="description">Description</Label>
+              <Textarea id="description" value={expenseDescription} onChange={e => setExpenseDescription(e.target.value)} />
+            </div>
+
+            {/* Receipt Upload */}
+            <div className="md:col-span-2 flex flex-col gap-1">
+              <Label htmlFor="receipt">Receipt</Label>
+              <Input id="receipt" type="file" onChange={e => setReceiptImage(e.target.files?.[0]?.name || "")} />
+              {receiptImage && <p className="text-sm text-muted-foreground mt-1">Selected: {receiptImage}</p>}
+            </div>
+
+            {/* Save Button */}
+            <div className="md:col-span-2">
+              <Button className="w-full" onClick={handleSaveExpense}>
+                {editingExpense ? "Update Expense" : "Save Expense"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
     </div>
-  )
+  );
 }
