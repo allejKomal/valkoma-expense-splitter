@@ -22,12 +22,12 @@ export async function upsertBudgetGist(
             return await updateBudgetGist(gistId, groupData);
         } else {
             // No ID given → create new gist
-            return await createBudgetGist(groupData);
+            return await createBudgetGist();
         }
     } catch (err: any) {
         // If fetching failed because gist doesn't exist → create it
         if (gistId && err?.response?.status === 404) {
-            return await createBudgetGist(groupData);
+            return await createBudgetGist();
         }
         throw err; // Other errors bubble up
     }
