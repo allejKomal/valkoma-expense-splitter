@@ -8,8 +8,8 @@ import {
   Input, Label
 } from "valkoma-package/primitive";
 import { Edit, Plus, Trash2, User } from "lucide-react";
-import { useToast } from "valkoma-package/hooks";
 import { useBudget, type Participant } from "@/context/budget-context";
+import { toast } from "sonner";
 export default function MembersTab() {
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Participant | null>(null);
@@ -18,7 +18,6 @@ export default function MembersTab() {
   const [memberImage, setMemberImage] = useState("");
   const [memberNotes, setMemberNotes] = useState("");
 
-  const { toast } = useToast();
   const { group, addParticipant, removeParticipant, updateGroup } = useBudget();
 
   const resetForm = () => {
@@ -31,7 +30,9 @@ export default function MembersTab() {
 
   const handleAddOrUpdate = () => {
     if (!memberName.trim()) {
-      toast({ title: "Error", description: "Name is required", variant: "destructive" });
+      toast("Error", {
+        description: "Name is required",
+      })
       return;
     }
 
@@ -43,7 +44,9 @@ export default function MembersTab() {
             : m
         ),
       });
-      toast({ title: "Success", description: `${memberName} updated` });
+      toast("Success", {
+        description: `${memberName} updated`,
+      })
     } else {
       addParticipant({
         name: memberName.trim(),
@@ -51,7 +54,9 @@ export default function MembersTab() {
         image: memberImage || undefined,
         notes: memberNotes || undefined,
       });
-      toast({ title: "Success", description: `${memberName} added` });
+      toast("Success", {
+        description: `${memberName} added`
+      })
     }
 
     resetForm();
@@ -67,17 +72,17 @@ export default function MembersTab() {
     );
 
     if (hasExpenses) {
-      toast({
-        title: "Cannot Delete Member",
-        description: "This member has expenses. Reassign or delete them first.",
-        variant: "destructive",
-      });
+      toast("Cannot Delete Member", {
+        description: "This member has expenses. Reassign or delete them first."
+      })
       return;
     }
 
     if (confirm(`Remove ${member.name}?`)) {
       removeParticipant(id);
-      toast({ title: "Removed", description: `${member.name} deleted` });
+      toast("Removed", {
+        description: `${member.name} deleted`
+      })
     }
   };
 

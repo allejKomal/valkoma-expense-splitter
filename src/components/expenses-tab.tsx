@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { Plus, Edit, Trash2 } from "lucide-react";
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
+
   Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Input, Textarea, Label,
-  Checkbox
+  Checkbox,
+  Badge
 } from "valkoma-package/primitive";
 import { EXPENSE_CATEGORIES, useBudget, type Expense } from "@/context/budget-context";
+import { toast } from "sonner";
 
 export default function ExpensesTab() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -29,6 +31,7 @@ export default function ExpensesTab() {
 
   const { group, addExpense, removeExpense, updateExpense, filterExpenses } = useBudget();
   const filteredExpenses = filterExpenses();
+
 
   // Populate form when editing
   useEffect(() => {
@@ -53,19 +56,39 @@ export default function ExpensesTab() {
     }
   }, [editingExpense]);
 
+  // Auto-configure when only one group member exists
+  useEffect(() => {
+    if (group.members.length === 1) {
+      const onlyMember = group.members[0];
+
+      setExpensePaidBy(onlyMember.id);
+      setSplitType("equal");
+      setSelectedMembers([onlyMember.id]);
+    }
+  }, [group.members]);
+
+
   const resetForm = () => {
     setExpenseTitle("");
     setExpenseDescription("");
     setExpenseAmount("");
-    setExpensePaidBy("");
     setExpenseDate(new Date().toISOString().split("T")[0]);
     setExpenseCategory("");
     setSplitType("equal");
-    setSelectedMembers([]);
-    setCustomSplits({});
     setReceiptImage("");
+    setCustomSplits({});
     setEditingExpense(null);
+
+    if (group.members.length === 1) {
+      const onlyMember = group.members[0];
+      setExpensePaidBy(onlyMember.id);
+      setSelectedMembers([onlyMember.id]);
+    } else {
+      setExpensePaidBy("");
+      setSelectedMembers([]);
+    }
   };
+
 
   const calculateSplits = () => {
     const amount = parseFloat(expenseAmount);
@@ -115,11 +138,13 @@ export default function ExpensesTab() {
 
   const handleSaveExpense = () => {
     if (!expenseTitle.trim() || !expenseAmount || !expensePaidBy || selectedMembers.length === 0) {
-      console.log("Please fill in all required fields");
+      toast("Please fill in all required fields", {
+        duration: Infinity,
+      });
       return;
     }
     if (!validateSplits()) {
-      console.log("Invalid split configuration");
+      toast("Invalid split configuration");
       return;
     }
 
@@ -172,50 +197,65 @@ export default function ExpensesTab() {
         {filteredExpenses.length === 0 ? (
           <p className="text-sm text-muted-foreground mt-6">No expenses yet.</p>
         ) : (
-          <ul className="divide-y">
+          <ul className="grid gap-2">
             {filteredExpenses.map((expense) => {
               const paidByMember = group.members.find((m) => m.id === expense.paidBy);
 
               return (
                 <li
                   key={expense.id}
-                  className="grid grid-cols-1 md:grid-cols-6 gap-2 px-2 py-3 text-sm items-center"
+                  className="group relative border rounded-md p-3  text-sm flex flex-col gap-2"
                 >
-                  {/* Title */}
-                  <div className="font-medium">{expense.title}</div>
-
-                  {/* Date */}
-                  <div className="text-muted-foreground">
-                    {new Date(expense.date).toLocaleDateString()}
+                  {/* Top row: title & amount */}
+                  <div className="flex justify-between items-start">
+                    <div className="flex gap-2">
+                      <div className="font-medium text-sm truncate">{expense.title}</div>
+                      <Badge variant="secondary" className="px-2 py-0.5">
+                        Paid by {paidByMember?.name ?? "Unknown"}
+                      </Badge>
+                    </div>
+                    <div className="text-sm font-semibold text-green-600 dark:text-green-400">
+                      ${expense.amount.toFixed(2)}
+                    </div>
                   </div>
 
-                  {/* Amount */}
-                  <div>${expense.amount.toFixed(2)}</div>
+                  {/* Badges row */}
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <Badge variant="secondary" className="px-2 py-0.5">
+                      {expense.category}
+                    </Badge>
+                    <Badge variant="outline" className="px-2 py-0.5">
+                      {new Date(expense.date).toLocaleDateString()}
+                    </Badge>
+                  </div>
 
-                  {/* Category */}
-                  <div className="text-muted-foreground">{expense.category}</div>
+                  {/* Notes (optional) */}
+                  {expense.notes && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                      {expense.notes}
+                    </p>
+                  )}
 
-                  {/* Paid By */}
-                  <div className="text-muted-foreground">{paidByMember?.name ?? "Unknown"}</div>
-
-                  {/* Actions */}
-                  <div className="flex justify-end gap-2">
+                  {/* Hover actions */}
+                  <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                     <Button
                       size="icon"
                       variant="ghost"
+                      className="h-6 w-6"
                       onClick={() => {
                         setEditingExpense(expense);
                         setIsDialogOpen(true);
                       }}
                     >
-                      <Edit className="w-4 h-4" />
+                      <Edit className="w-3.5 h-3.5" />
                     </Button>
                     <Button
                       size="icon"
                       variant="ghost"
+                      className="h-6 w-6"
                       onClick={() => removeExpense(expense.id)}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
                 </li>
@@ -231,7 +271,7 @@ export default function ExpensesTab() {
         setIsDialogOpen(open);
         if (!open) resetForm();
       }}>
-        <DialogContent className="max-w-3xl p-6">
+        <DialogContent className="max-w-3xl p-6 z-[50]">
           <DialogHeader className="mb-4">
             <DialogTitle className="text-xl">{editingExpense ? "Edit Expense" : "Add Expense"}</DialogTitle>
             <DialogDescription>Provide all the details to record the expense.</DialogDescription>

@@ -6,7 +6,7 @@ import {
   Receipt,
   BarChart3,
   Calculator,
-  Filter,
+  Filter
 } from "lucide-react";
 import {
   Select,
@@ -42,7 +42,6 @@ export default function GroupPage() {
 
   const [activeTab, setActiveTab] = useState("expenses");
 
-
   // Stats
   const filteredExpenses = filterExpenses();
   const totalExpenses = filteredExpenses.reduce(
@@ -59,6 +58,17 @@ export default function GroupPage() {
     { label: "Average", value: `$${averageExpense.toFixed(2)}`, icon: Calculator },
   ];
 
+  // async function handleCreate() {
+  //   try {
+  //     const gist = await createBudgetGist();
+  //     alert(`Created gist: ${gist.id}`);
+  //     console.log(gist);
+  //   } catch (e) {
+  //     console.error(e);
+  //     alert("Failed to create gist");
+  //   }
+  // }
+
   return (
     <div className="mx-auto p-4 max-w-[1100px]">
       {/* Header */}
@@ -69,7 +79,15 @@ export default function GroupPage() {
             <p className="text-muted-foreground">{group.description}</p>
           )}
         </div>
-        <ExportButton />
+        <div className="flex gap-2">
+          <ExportButton />
+          {/* <Button onClick={startGithubOauth}>
+            <GitPullRequestArrow />
+          </Button> */}
+          {/* <Button onClick={handleCreate}>
+            <GitBranchPlusIcon />
+          </Button> */}
+        </div>
       </div>
 
       {/* Search and Filter Bar */}

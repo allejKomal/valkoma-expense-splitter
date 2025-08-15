@@ -2,9 +2,13 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { getBudgetGist } from "@/service/get-gist"; import { createBudgetGist } from "@/service/creat-gist";
+import { gh } from "@/service/git-api";
+import { updateBudgetGist } from "@/service/udpate-gist";
+import { toast } from "sonner";
 
 // ---------------------------
-// Hardcoded Categories
+// Categories & Types
 // ---------------------------
 export const EXPENSE_CATEGORIES = [
     "Food & Drinks",
@@ -21,9 +25,6 @@ export const EXPENSE_CATEGORIES = [
 
 export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number];
 
-// ---------------------------
-// Types
-// ---------------------------
 export interface Participant {
     id: string;
     name: string;
@@ -75,68 +76,145 @@ interface BudgetContextProps {
     addParticipant: (p: Omit<Participant, "id">) => void;
     removeParticipant: (participantId: string) => void;
     addExpense: (e: Omit<Expense, "id" | "date"> & { date?: string }) => void;
-    updateExpense: (updatedExpense: Expense) => void
+    updateExpense: (updatedExpense: Expense) => void;
     removeExpense: (expenseId: string) => void;
     calculateBalances: () => Record<string, number>;
     optimizeDebts: () => Settlement[];
     filterExpenses: (overrideFilters?: Partial<ExpenseFilters>) => Expense[];
-
     filters: ExpenseFilters;
     setFilters: React.Dispatch<React.SetStateAction<ExpenseFilters>>;
 }
 
-// ---------------------------
-// Context
-// ---------------------------
 const BudgetContext = createContext<BudgetContextProps | undefined>(undefined);
 
-export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({
+    children,
+}) => {
+    const [gistId, setGistId] = useState<string | null>(null);
     const [filters, setFilters] = useState<ExpenseFilters>({
         search: "",
         category: null,
         memberId: null,
     });
 
-    const [group, setGroup] = useState<Group>(() => {
-        try {
-            const stored = localStorage.getItem("budget-group");
-            if (stored) return JSON.parse(stored) as Group;
-        } catch (error) {
-            console.error("Failed to parse budget-group from localStorage:", error);
-        }
-        return {
-            id: uuidv4(),
-            name: "My Shared Budget",
-            description: "Track shared expenses with friends or family",
-            members: [],
-            expenses: [],
-            createdAt: new Date().toISOString(),
-        };
+    const [group, setGroup] = useState<Group>({
+        id: uuidv4(),
+        name: "My Shared Budget",
+        description: "Track shared expenses with friends or family",
+        members: [],
+        expenses: [],
+        createdAt: new Date().toISOString(),
     });
 
-    // Persist in localStorage
+    // ---------------------------
+    // Init Flow: Find or Create Gist
+    // ---------------------------
     useEffect(() => {
-        try {
-            localStorage.setItem("budget-group", JSON.stringify(group));
-        } catch (error) {
-            console.error("Failed to save budget-group to localStorage:", error);
+        async function init() {
+            try {
+                let savedId = localStorage.getItem("budget-gist-id");
+
+                // ✅ Step 1: If we already have a saved gist ID
+                if (savedId) {
+                    try {
+                        const remoteGroup = await getBudgetGist(savedId);
+
+                        if (!remoteGroup) {
+                            // ❌ Gist exists but budget.json missing
+                            const newGist = await createBudgetGist();
+                            savedId = newGist.id;
+                            localStorage.setItem("budget-gist-id", savedId || "");
+                            setGistId(savedId);
+                            setGroup(await getBudgetGist(savedId || ""));
+                            return;
+                        }
+
+                        // ✅ Gist and budget.json found
+                        setGistId(savedId);
+                        setGroup(remoteGroup);
+                        return;
+                    } catch (err: any) {
+                        if (err?.response?.status === 404) {
+                            // ❌ Gist ID in storage but gist deleted → create new
+                            const newGist = await createBudgetGist();
+                            savedId = newGist.id;
+                            localStorage.setItem("budget-gist-id", savedId || "");
+                            setGistId(savedId);
+                            setGroup(await getBudgetGist(savedId || ""));
+                            return;
+                        }
+                        throw err; // some other error
+                    }
+                }
+
+                // ✅ Step 2: If no gist ID saved, search for existing gists
+                const { data: gists } = await gh.get("/gists");
+                const existing = gists.find((g: any) => g.files["budget.json"]);
+
+                if (existing) {
+                    savedId = existing.id;
+                    localStorage.setItem("budget-gist-id", savedId || "");
+                    setGistId(savedId);
+                    setGroup(await getBudgetGist(savedId || ""));
+                    return;
+                }
+
+                // ✅ Step 3: Create a new gist if none found
+                const newGist = await createBudgetGist();
+                savedId = newGist.id;
+                localStorage.setItem("budget-gist-id", savedId || "");
+                setGistId(savedId);
+                setGroup(await getBudgetGist(savedId || ""));
+
+            } catch (e) {
+                toast("Failed to initialize budget gist");
+                console.log(e);
+
+            }
         }
-    }, [group]);
+
+        init();
+    }, []);
+
+
+    // ---------------------------
+    // Sync group to Gist when it changes
+    // ---------------------------
+    useEffect(() => {
+        if (!gistId) return;
+
+        const timeout = setTimeout(async () => {
+            try {
+                await updateBudgetGist(gistId!, group);
+            } catch (e) {
+                toast("Failed to update gist");
+                console.log(e);
+            }
+        }, 1000); // debounce updates
+
+        return () => clearTimeout(timeout);
+    }, [group, gistId]);
 
     // ---------------------------
     // Group Update
     // ---------------------------
-    const updateGroup = (updates: Partial<Omit<Group, "id" | "createdAt">>) => {
-        setGroup(prev => ({ ...prev, ...updates }));
+    const updateGroup = (
+        updates: Partial<Omit<Group, "id" | "createdAt">>
+    ) => {
+        setGroup((prev) => ({ ...prev, ...updates }));
     };
 
     // ---------------------------
     // Participant Management
     // ---------------------------
     const addParticipant = (p: Omit<Participant, "id">) => {
-        setGroup(prev => {
-            if (prev.members.some(m => m.name.trim().toLowerCase() === p.name.trim().toLowerCase())) {
-                console.warn(`Participant "${p.name}" already exists.`);
+        setGroup((prev) => {
+            if (
+                prev.members.some(
+                    (m) => m.name.trim().toLowerCase() === p.name.trim().toLowerCase()
+                )
+            ) {
+                (`Participant "${p.name}" already exists.`);
                 return prev;
             }
             return {
@@ -147,11 +225,13 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     const removeParticipant = (participantId: string) => {
-        setGroup(prev => ({
+        setGroup((prev) => ({
             ...prev,
-            members: prev.members.filter(m => m.id !== participantId),
+            members: prev.members.filter((m) => m.id !== participantId),
             expenses: prev.expenses.filter(
-                e => e.paidBy !== participantId && !e.splits.some(s => s.participantId === participantId)
+                (e) =>
+                    e.paidBy !== participantId &&
+                    !e.splits.some((s) => s.participantId === participantId)
             ),
         }));
     };
@@ -159,8 +239,10 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // ---------------------------
     // Expense Management
     // ---------------------------
-    const addExpense = (e: Omit<Expense, "id" | "date"> & { date?: string }) => {
-        setGroup(prev => ({
+    const addExpense = (
+        e: Omit<Expense, "id" | "date"> & { date?: string }
+    ) => {
+        setGroup((prev) => ({
             ...prev,
             expenses: [
                 ...prev.expenses,
@@ -169,21 +251,19 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }));
     };
 
-    // Add this inside your BudgetProvider, alongside addExpense and removeExpense
     const updateExpense = (updatedExpense: Expense) => {
-        setGroup(prev => ({
+        setGroup((prev) => ({
             ...prev,
-            expenses: prev.expenses.map(e =>
+            expenses: prev.expenses.map((e) =>
                 e.id === updatedExpense.id ? updatedExpense : e
             ),
         }));
     };
 
-
     const removeExpense = (expenseId: string) => {
-        setGroup(prev => ({
+        setGroup((prev) => ({
             ...prev,
-            expenses: prev.expenses.filter(e => e.id !== expenseId),
+            expenses: prev.expenses.filter((e) => e.id !== expenseId),
         }));
     };
 
@@ -192,13 +272,14 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // ---------------------------
     const calculateBalances = () => {
         const balances: Record<string, number> = Object.fromEntries(
-            group.members.map(m => [m.id, 0])
+            group.members.map((m) => [m.id, 0])
         );
 
         for (const e of group.expenses) {
             balances[e.paidBy] = (balances[e.paidBy] ?? 0) + e.amount;
             for (const s of e.splits) {
-                balances[s.participantId] = (balances[s.participantId] ?? 0) - s.amount;
+                balances[s.participantId] =
+                    (balances[s.participantId] ?? 0) - s.amount;
             }
         }
 
@@ -225,7 +306,11 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const creditor = creditors[0];
             const minAmount = Math.min(debtor.amount, creditor.amount);
 
-            settlements.push({ from: debtor.id, to: creditor.id, amount: minAmount });
+            settlements.push({
+                from: debtor.id,
+                to: creditor.id,
+                amount: minAmount,
+            });
 
             debtor.amount -= minAmount;
             creditor.amount -= minAmount;
@@ -244,11 +329,12 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const activeFilters = { ...filters, ...overrideFilters };
         const searchLower = activeFilters.search?.toLowerCase() || "";
 
-        return group.expenses.filter(expense => {
+        return group.expenses.filter((expense) => {
             let matches = true;
 
             if (searchLower) {
-                matches = matches && expense.title.toLowerCase().includes(searchLower);
+                matches =
+                    matches && expense.title.toLowerCase().includes(searchLower);
             }
             if (activeFilters.category) {
                 matches = matches && expense.category === activeFilters.category;
@@ -257,7 +343,9 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 matches =
                     matches &&
                     (expense.paidBy === activeFilters.memberId ||
-                        expense.splits.some(s => s.participantId === activeFilters.memberId));
+                        expense.splits.some(
+                            (s) => s.participantId === activeFilters.memberId
+                        ));
             }
 
             return matches;
@@ -286,9 +374,6 @@ export const BudgetProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
 };
 
-// ---------------------------
-// Hook
-// ---------------------------
 export const useBudget = () => {
     const ctx = useContext(BudgetContext);
     if (!ctx) throw new Error("useBudget must be used inside BudgetProvider");
