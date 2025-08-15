@@ -6,7 +6,8 @@ import {
   Receipt,
   BarChart3,
   Calculator,
-  Filter
+  Filter,
+  GitPullRequestArrow
 } from "lucide-react";
 import {
   Select,
@@ -23,6 +24,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  Button,
 } from "valkoma-package/primitive";
 
 import BalancesTab from "@/components/balances-tab";
@@ -31,6 +33,7 @@ import ExpensesTab from "@/components/expenses-tab";
 import { EXPENSE_CATEGORIES, useBudget } from "@/context/budget-context";
 import { ReportsTab } from "@/components/reports-tab";
 import ExportButton from "@/components/export"
+import { startGithubOauth } from "@/service/githubauth";
 
 export default function GroupPage() {
   const {
@@ -81,9 +84,9 @@ export default function GroupPage() {
         </div>
         <div className="flex gap-2">
           <ExportButton />
-          {/* <Button onClick={startGithubOauth}>
+          <Button onClick={startGithubOauth}>
             <GitPullRequestArrow />
-          </Button> */}
+          </Button>
           {/* <Button onClick={handleCreate}>
             <GitBranchPlusIcon />
           </Button> */}
